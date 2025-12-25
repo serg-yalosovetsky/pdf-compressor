@@ -4,7 +4,7 @@
 
 ## 🌐 Попробовать онлайн
 
-**GitHub Pages:** https://vakovalskii.github.io/pdf-compressor/
+**GitHub Pages:** https://serg-yalosovetsky.github.io/pdf-compressor/
 
 ### ✂️ PDF Редактор (главная страница)
 - Визуальный просмотр всех страниц
@@ -13,7 +13,7 @@
 - Сохранение нового PDF
 
 ### 🚀 Ghostscript WASM Compressor (экспериментально)
-**URL:** https://vakovalskii.github.io/pdf-compressor/compress-wasm.html
+**URL:** https://serg-yalosovetsky.github.io/pdf-compressor/compress-wasm.html
 
 - ✅ **Настоящее сжатие** (70-90%) прямо в браузере!
 - ✅ **Полная приватность** - файлы не покидают ваш браузер

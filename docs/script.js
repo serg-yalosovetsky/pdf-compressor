@@ -1,45 +1,39 @@
+// Настройка PDF.js
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
 // Элементы DOM
-const uploadForm = document.getElementById('upload-form');
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('pdf-file');
-const fileInfo = document.getElementById('file-info');
-const fileName = document.getElementById('file-name');
-const fileSize = document.getElementById('file-size');
-const removeFileBtn = document.getElementById('remove-file');
-const compressBtn = document.getElementById('compress-btn');
+const uploadSection = document.getElementById('upload-section');
+const editorSection = document.getElementById('editor-section');
+const pagesGrid = document.getElementById('pages-grid');
 const progressSection = document.getElementById('progress-section');
 const progressText = document.getElementById('progress-text');
-const resultSection = document.getElementById('result-section');
 const errorSection = document.getElementById('error-section');
 const errorMessage = document.getElementById('error-message');
-const resetBtn = document.getElementById('reset-btn');
+
+const totalPagesEl = document.getElementById('total-pages');
+const deletedPagesEl = document.getElementById('deleted-pages');
+const remainingPagesEl = document.getElementById('remaining-pages');
+
+const selectAllBtn = document.getElementById('select-all-btn');
+const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+const restoreAllBtn = document.getElementById('restore-all-btn');
+const savePdfBtn = document.getElementById('save-pdf-btn');
 const errorResetBtn = document.getElementById('error-reset-btn');
 
-let selectedFile = null;
-let originalFileSize = 0;
-
-// Форматирование размера файла
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
-}
+let pdfDoc = null;
+let pdfBytes = null;
+let pages = [];
+let draggedElement = null;
 
 // Обработка клика на зону загрузки
-dropZone.addEventListener('click', (e) => {
-    if (e.target.classList.contains('browse-link') || e.target === dropZone) {
-        fileInput.click();
-    }
-});
+dropZone.addEventListener('click', () => fileInput.click());
 
 // Обработка выбора файла
 fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
-    if (file) {
-        handleFileSelect(file);
-    }
+    if (file) handleFileSelect(file);
 });
 
 // Drag and Drop
@@ -55,253 +49,326 @@ dropZone.addEventListener('dragleave', () => {
 dropZone.addEventListener('drop', (e) => {
     e.preventDefault();
     dropZone.classList.remove('drag-over');
-    
     const file = e.dataTransfer.files[0];
     if (file && file.type === 'application/pdf') {
         handleFileSelect(file);
-    } else {
-        showError('Пожалуйста, выберите PDF файл');
     }
 });
 
-// Обработка выбранного файла
-function handleFileSelect(file) {
+// Обработка файла
+async function handleFileSelect(file) {
     if (file.type !== 'application/pdf') {
         showError('Пожалуйста, выберите PDF файл');
         return;
     }
 
-    // Ограничение для клиентской версии - 20 MB
-    const MAX_SIZE = 20 * 1024 * 1024; // 20 MB
-    if (file.size > MAX_SIZE) {
-        showError(
-            `Размер файла ${formatFileSize(file.size)} слишком большой для браузерной версии. ` +
-            `Максимум: ${formatFileSize(MAX_SIZE)}. ` +
-            `Для больших файлов используйте локальную версию с Ghostscript (до 90% сжатия): ` +
-            `https://github.com/vakovalskii/pdf-compressor`
-        );
+    if (file.size > 50 * 1024 * 1024) {
+        showError('Размер файла не должен превышать 50 MB');
         return;
     }
 
-    // Предупреждение для файлов больше 10 MB
-    if (file.size > 10 * 1024 * 1024) {
-        console.warn(`⚠️ Файл ${formatFileSize(file.size)} может обрабатываться медленно в браузере.`);
-    }
-
-    selectedFile = file;
-    originalFileSize = file.size;
-    
-    fileName.textContent = file.name;
-    fileSize.textContent = formatFileSize(file.size);
-    
-    dropZone.style.display = 'none';
-    fileInfo.style.display = 'flex';
-    compressBtn.disabled = false;
-}
-
-// Удаление файла
-removeFileBtn.addEventListener('click', () => {
-    resetForm();
-});
-
-// Сброс формы
-function resetForm() {
-    selectedFile = null;
-    originalFileSize = 0;
-    fileInput.value = '';
-    
-    dropZone.style.display = 'block';
-    fileInfo.style.display = 'none';
-    progressSection.style.display = 'none';
-    resultSection.style.display = 'none';
-    errorSection.style.display = 'none';
-    compressBtn.disabled = false;
-}
-
-// Сжатие PDF в браузере
-async function compressPdfClientSide(file, quality) {
     try {
-        progressText.textContent = 'Загрузка PDF...';
+        showProgress('Загрузка PDF...');
         
         // Читаем файл
         const arrayBuffer = await file.arrayBuffer();
+        pdfBytes = new Uint8Array(arrayBuffer);
         
-        progressText.textContent = 'Анализ PDF...';
+        showProgress('Загрузка документа...');
         
-        // Загружаем PDF с помощью pdf-lib с обработкой ошибок
-        let pdfDoc;
-        try {
-            pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer, {
-                ignoreEncryption: true,
-                throwOnInvalidObject: false
-            });
-        } catch (loadError) {
-            console.error('Ошибка загрузки PDF:', loadError);
-            
-            // Проверяем типичные проблемы
-            if (loadError.message.includes('encrypted') || loadError.message.includes('password')) {
-                throw new Error('PDF защищён паролем. Клиентская версия не поддерживает зашифрованные PDF. Используйте локальную версию.');
-            }
-            if (loadError.message.includes('Invalid') || loadError.message.includes('corrupt')) {
-                throw new Error('PDF файл повреждён или имеет нестандартную структуру. Используйте локальную версию с Ghostscript.');
-            }
-            if (loadError.message.includes('too large')) {
-                throw new Error('PDF слишком сложный для обработки в браузере. Используйте локальную версию.');
-            }
-            
-            throw new Error('Не удалось загрузить PDF. Попробуйте локальную версию с Ghostscript для лучшей совместимости.');
-        }
+        // Загружаем с помощью pdf-lib
+        pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
         
-        // Получаем качество сжатия
-        let imageQuality;
-        switch(quality) {
-            case 'low':
-                imageQuality = 0.3;
-                break;
-            case 'medium':
-                imageQuality = 0.6;
-                break;
-            case 'high':
-                imageQuality = 0.85;
-                break;
-            default:
-                imageQuality = 0.6;
-        }
+        showProgress('Рендеринг страниц...');
         
-        progressText.textContent = 'Оптимизация PDF...';
+        // Рендерим превью с помощью PDF.js
+        await renderPages(arrayBuffer);
         
-        // Получаем все страницы
-        const pages = pdfDoc.getPages();
-        
-        // Обрабатываем каждую страницу
-        for (let i = 0; i < pages.length; i++) {
-            progressText.textContent = `Обработка страницы ${i + 1} из ${pages.length}...`;
-            
-            const page = pages[i];
-            
-            // Уменьшаем размер страницы если нужно
-            if (quality === 'low') {
-                const { width, height } = page.getSize();
-                page.scale(0.75, 0.75);
-            }
-        }
-        
-        progressText.textContent = 'Сохранение сжатого PDF...';
-        
-        // Сохраняем с оптимизацией
-        const pdfBytes = await pdfDoc.save({
-            useObjectStreams: true,
-            addDefaultPage: false,
-            objectsPerTick: 50,
-        });
-        
-        progressText.textContent = 'Готово!';
-        
-        return pdfBytes;
+        hideProgress();
+        uploadSection.style.display = 'none';
+        editorSection.style.display = 'block';
         
     } catch (error) {
-        console.error('Ошибка при сжатии:', error);
-        
-        // Если это наша кастомная ошибка, пробрасываем её
-        if (error.message.includes('Используйте локальную версию') || 
-            error.message.includes('защищён паролем') ||
-            error.message.includes('повреждён')) {
-            throw error;
-        }
-        
-        // Общая ошибка
-        throw new Error(
-            'Не удалось сжать PDF в браузере. ' +
-            'Файл может быть слишком сложным или большим. ' +
-            'Используйте локальную версию с Ghostscript для лучшего результата: ' +
-            'https://github.com/vakovalskii/pdf-compressor'
-        );
+        console.error('Error loading PDF:', error);
+        showError('Не удалось загрузить PDF: ' + error.message);
     }
 }
 
-// Обработка отправки формы
-uploadForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
+// Рендеринг страниц
+async function renderPages(arrayBuffer) {
+    const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+    const numPages = pdf.numPages;
     
-    if (!selectedFile) {
-        showError('Пожалуйста, выберите файл');
-        return;
+    pages = [];
+    pagesGrid.innerHTML = '';
+    
+    for (let i = 1; i <= numPages; i++) {
+        showProgress(`Рендеринг страницы ${i} из ${numPages}...`);
+        
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({scale: 0.5});
+        
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        await page.render({
+            canvasContext: context,
+            viewport: viewport
+        }).promise;
+        
+        const pageData = {
+            index: i - 1,
+            originalIndex: i - 1,
+            deleted: false,
+            canvas: canvas
+        };
+        
+        pages.push(pageData);
+        createPageCard(pageData);
     }
-
-    const quality = document.querySelector('input[name="quality"]:checked').value;
     
-    // Показываем прогресс
-    compressBtn.disabled = true;
-    progressSection.style.display = 'block';
-    resultSection.style.display = 'none';
-    errorSection.style.display = 'none';
+    updateStats();
+}
 
+// Создание карточки страницы
+function createPageCard(pageData) {
+    const card = document.createElement('div');
+    card.className = 'page-card';
+    card.draggable = true;
+    card.dataset.index = pageData.index;
+    
+    const preview = pageData.canvas;
+    preview.className = 'page-preview';
+    
+    const pageNumber = document.createElement('div');
+    pageNumber.className = 'page-number';
+    pageNumber.textContent = `Страница ${pageData.originalIndex + 1}`;
+    
+    const actions = document.createElement('div');
+    actions.className = 'page-actions';
+    
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'page-btn delete-btn';
+    deleteBtn.textContent = 'Удалить';
+    deleteBtn.onclick = () => togglePageDelete(pageData.index);
+    
+    actions.appendChild(deleteBtn);
+    
+    card.appendChild(preview);
+    card.appendChild(pageNumber);
+    card.appendChild(actions);
+    
+    // Drag and drop для перестановки
+    card.addEventListener('dragstart', handleDragStart);
+    card.addEventListener('dragover', handleDragOver);
+    card.addEventListener('drop', handleDrop);
+    card.addEventListener('dragend', handleDragEnd);
+    
+    pagesGrid.appendChild(card);
+}
+
+// Обработка удаления страницы
+function togglePageDelete(index) {
+    const page = pages.find(p => p.index === index);
+    if (!page) return;
+    
+    page.deleted = !page.deleted;
+    
+    const card = pagesGrid.querySelector(`[data-index="${index}"]`);
+    if (page.deleted) {
+        card.classList.add('selected');
+        const deleteBtn = card.querySelector('.delete-btn');
+        deleteBtn.textContent = 'Восстановить';
+        deleteBtn.className = 'page-btn restore-btn';
+    } else {
+        card.classList.remove('selected');
+        const restoreBtn = card.querySelector('.restore-btn');
+        restoreBtn.textContent = 'Удалить';
+        restoreBtn.className = 'page-btn delete-btn';
+    }
+    
+    updateStats();
+}
+
+// Drag and Drop handlers
+function handleDragStart(e) {
+    draggedElement = e.target;
+    e.target.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragOver(e) {
+    if (e.preventDefault) {
+        e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+}
+
+function handleDrop(e) {
+    if (e.stopPropagation) {
+        e.stopPropagation();
+    }
+    
+    if (draggedElement !== e.target && e.target.classList.contains('page-card')) {
+        const draggedIndex = parseInt(draggedElement.dataset.index);
+        const targetIndex = parseInt(e.target.dataset.index);
+        
+        // Меняем местами в массиве
+        const draggedPage = pages.find(p => p.index === draggedIndex);
+        const targetPage = pages.find(p => p.index === targetIndex);
+        
+        draggedPage.index = targetIndex;
+        targetPage.index = draggedIndex;
+        
+        // Обновляем DOM
+        if (draggedElement.nextSibling === e.target) {
+            pagesGrid.insertBefore(e.target, draggedElement);
+        } else {
+            pagesGrid.insertBefore(draggedElement, e.target);
+        }
+        
+        // Обновляем data-index
+        draggedElement.dataset.index = targetIndex;
+        e.target.dataset.index = draggedIndex;
+    }
+    
+    return false;
+}
+
+function handleDragEnd(e) {
+    e.target.classList.remove('dragging');
+}
+
+// Обновление статистики
+function updateStats() {
+    const total = pages.length;
+    const deleted = pages.filter(p => p.deleted).length;
+    const remaining = total - deleted;
+    
+    totalPagesEl.textContent = total;
+    deletedPagesEl.textContent = deleted;
+    remainingPagesEl.textContent = remaining;
+}
+
+// Кнопки управления
+selectAllBtn.addEventListener('click', () => {
+    pages.forEach(page => {
+        if (!page.deleted) {
+            togglePageDelete(page.index);
+        }
+    });
+});
+
+deleteSelectedBtn.addEventListener('click', () => {
+    const cards = pagesGrid.querySelectorAll('.page-card:not(.selected)');
+    cards.forEach(card => {
+        const index = parseInt(card.dataset.index);
+        const page = pages.find(p => p.index === index);
+        if (page && !page.deleted) {
+            togglePageDelete(index);
+        }
+    });
+});
+
+restoreAllBtn.addEventListener('click', () => {
+    pages.forEach(page => {
+        if (page.deleted) {
+            togglePageDelete(page.index);
+        }
+    });
+});
+
+// Сохранение PDF
+savePdfBtn.addEventListener('click', async () => {
     try {
-        // Сжимаем PDF в браузере
-        const compressedBytes = await compressPdfClientSide(selectedFile, quality);
+        const remaining = pages.filter(p => !p.deleted).length;
         
-        const compressedSize = compressedBytes.length;
+        if (remaining === 0) {
+            showError('Нельзя сохранить пустой PDF. Восстановите хотя бы одну страницу.');
+            return;
+        }
         
-        // Создаем Blob для скачивания
-        const blob = new Blob([compressedBytes], { type: 'application/pdf' });
+        showProgress('Создание нового PDF...');
         
-        // Скачиваем файл
+        // Создаём новый PDF
+        const newPdf = await PDFLib.PDFDocument.create();
+        
+        // Загружаем оригинальный PDF
+        const originalPdf = await PDFLib.PDFDocument.load(pdfBytes);
+        
+        // Сортируем страницы по текущему порядку
+        const sortedPages = [...pages].sort((a, b) => a.index - b.index);
+        
+        // Копируем только не удалённые страницы в правильном порядке
+        let copiedCount = 0;
+        for (const page of sortedPages) {
+            if (!page.deleted) {
+                showProgress(`Копирование страницы ${copiedCount + 1} из ${remaining}...`);
+                const [copiedPage] = await newPdf.copyPages(originalPdf, [page.originalIndex]);
+                newPdf.addPage(copiedPage);
+                copiedCount++;
+            }
+        }
+        
+        showProgress('Сохранение PDF...');
+        
+        // Сохраняем
+        const newPdfBytes = await newPdf.save();
+        
+        // Скачиваем
+        const blob = new Blob([newPdfBytes], { type: 'application/pdf' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `compressed_${selectedFile.name}`;
+        a.download = 'edited.pdf';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
-
-        // Показываем результат
-        showResult(originalFileSize, compressedSize);
-
+        
+        hideProgress();
+        
+        alert(`✅ PDF сохранён!\n\nСтраниц: ${remaining} из ${pages.length}`);
+        
     } catch (error) {
-        console.error('Error:', error);
-        showError(error.message || 'Произошла ошибка при сжатии файла');
-    } finally {
-        progressSection.style.display = 'none';
-        compressBtn.disabled = false;
+        console.error('Error saving PDF:', error);
+        showError('Ошибка при сохранении PDF: ' + error.message);
     }
 });
 
-// Показать результат
-function showResult(originalSize, compressedSize) {
-    const savedSize = originalSize - compressedSize;
-    const savedPercent = Math.round((savedSize / originalSize) * 100);
-
-    document.getElementById('original-size').textContent = formatFileSize(originalSize);
-    document.getElementById('compressed-size').textContent = formatFileSize(compressedSize);
-    
-    if (savedSize > 0) {
-        document.getElementById('saved-size').textContent = `${formatFileSize(savedSize)} (${savedPercent}%)`;
-    } else {
-        // Иногда файл может стать больше из-за особенностей PDF
-        document.getElementById('saved-size').textContent = `0 Bytes (0%)`;
-        document.getElementById('saved-size').parentElement.classList.remove('highlight');
-    }
-
-    resultSection.style.display = 'block';
+// Вспомогательные функции
+function showProgress(text) {
+    progressText.textContent = text;
+    progressSection.style.display = 'block';
     errorSection.style.display = 'none';
 }
 
-// Показать ошибку
-function showError(message) {
-    errorMessage.textContent = message;
-    errorSection.style.display = 'block';
-    resultSection.style.display = 'none';
+function hideProgress() {
     progressSection.style.display = 'none';
 }
 
-// Кнопки сброса
-resetBtn.addEventListener('click', resetForm);
-errorResetBtn.addEventListener('click', resetForm);
+function showError(message) {
+    errorMessage.textContent = message;
+    errorSection.style.display = 'block';
+    progressSection.style.display = 'none';
+}
 
-// Информация при загрузке
-window.addEventListener('load', () => {
-    console.log('🔒 Клиентская версия загружена. Все файлы обрабатываются только в браузере.');
-    console.log('⚠️ Клиентское сжатие работает медленнее и менее эффективно, чем серверное через Ghostscript.');
-});
+function resetEditor() {
+    uploadSection.style.display = 'block';
+    editorSection.style.display = 'none';
+    errorSection.style.display = 'none';
+    progressSection.style.display = 'none';
+    pagesGrid.innerHTML = '';
+    pages = [];
+    pdfDoc = null;
+    pdfBytes = null;
+    fileInput.value = '';
+}
+
+errorResetBtn.addEventListener('click', resetEditor);
+
+console.log('📄 PDF Editor загружен!');
 

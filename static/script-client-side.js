@@ -71,9 +71,21 @@ function handleFileSelect(file) {
         return;
     }
 
-    if (file.size > 100 * 1024 * 1024) { // 100 MB
-        showError('Размер файла не должен превышать 100 MB');
+    // Ограничение для клиентской версии - 20 MB
+    const MAX_SIZE = 20 * 1024 * 1024; // 20 MB
+    if (file.size > MAX_SIZE) {
+        showError(
+            `Размер файла ${formatFileSize(file.size)} слишком большой для браузерной версии. ` +
+            `Максимум: ${formatFileSize(MAX_SIZE)}. ` +
+            `Для больших файлов используйте локальную версию с Ghostscript (до 90% сжатия): ` +
+            `https://github.com/vakovalskii/pdf-compressor`
+        );
         return;
+    }
+
+    // Предупреждение для файлов больше 10 MB
+    if (file.size > 10 * 1024 * 1024) {
+        console.warn(`⚠️ Файл ${formatFileSize(file.size)} может обрабатываться медленно в браузере.`);
     }
 
     selectedFile = file;
@@ -116,8 +128,29 @@ async function compressPdfClientSide(file, quality) {
         
         progressText.textContent = 'Анализ PDF...';
         
-        // Загружаем PDF с помощью pdf-lib
-        const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+        // Загружаем PDF с помощью pdf-lib с обработкой ошибок
+        let pdfDoc;
+        try {
+            pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer, {
+                ignoreEncryption: true,
+                throwOnInvalidObject: false
+            });
+        } catch (loadError) {
+            console.error('Ошибка загрузки PDF:', loadError);
+            
+            // Проверяем типичные проблемы
+            if (loadError.message.includes('encrypted') || loadError.message.includes('password')) {
+                throw new Error('PDF защищён паролем. Клиентская версия не поддерживает зашифрованные PDF. Используйте локальную версию.');
+            }
+            if (loadError.message.includes('Invalid') || loadError.message.includes('corrupt')) {
+                throw new Error('PDF файл повреждён или имеет нестандартную структуру. Используйте локальную версию с Ghostscript.');
+            }
+            if (loadError.message.includes('too large')) {
+                throw new Error('PDF слишком сложный для обработки в браузере. Используйте локальную версию.');
+            }
+            
+            throw new Error('Не удалось загрузить PDF. Попробуйте локальную версию с Ghostscript для лучшей совместимости.');
+        }
         
         // Получаем качество сжатия
         let imageQuality;
@@ -135,7 +168,7 @@ async function compressPdfClientSide(file, quality) {
                 imageQuality = 0.6;
         }
         
-        progressText.textContent = 'Сжатие изображений в PDF...';
+        progressText.textContent = 'Оптимизация PDF...';
         
         // Получаем все страницы
         const pages = pdfDoc.getPages();
@@ -168,7 +201,21 @@ async function compressPdfClientSide(file, quality) {
         
     } catch (error) {
         console.error('Ошибка при сжатии:', error);
-        throw new Error('Не удалось сжать PDF. Попробуйте другой файл или используйте серверную версию.');
+        
+        // Если это наша кастомная ошибка, пробрасываем её
+        if (error.message.includes('Используйте локальную версию') || 
+            error.message.includes('защищён паролем') ||
+            error.message.includes('повреждён')) {
+            throw error;
+        }
+        
+        // Общая ошибка
+        throw new Error(
+            'Не удалось сжать PDF в браузере. ' +
+            'Файл может быть слишком сложным или большим. ' +
+            'Используйте локальную версию с Ghostscript для лучшего результата: ' +
+            'https://github.com/vakovalskii/pdf-compressor'
+        );
     }
 }
 

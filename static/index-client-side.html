@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Compressor - Локальное сжатие PDF</title>
+    <title>PDF Compressor - Client-Side (Без сервера)</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -18,20 +18,18 @@
                 </svg>
                 <h1>PDF Compressor</h1>
             </div>
-            <p class="subtitle">Локальное сжатие PDF файлов без загрузки в облако</p>
+            <p class="subtitle">🔒 Полностью клиентская обработка - файлы НЕ загружаются на сервер</p>
             <div style="margin-top: 1rem; padding: 0.75rem; background: rgba(255,255,255,0.2); border-radius: 0.5rem;">
-                <p style="font-size: 0.9rem; margin: 0;">
-                    🔒 Нужна максимальная приватность? 
-                    <a href="/index-client-side.html" style="color: white; text-decoration: underline; font-weight: 600;">
-                        Попробуйте версию без отправки на сервер
-                    </a>
+                <p style="font-size: 0.9rem; margin: 0;">⚠️ Клиентское сжатие работает медленнее и сжимает хуже, чем серверное через Ghostscript</p>
+                <p style="font-size: 0.9rem; margin: 0.5rem 0 0 0;">
+                    <a href="/" style="color: white; text-decoration: underline;">← Вернуться к серверной версии (лучшее сжатие)</a>
                 </p>
             </div>
         </header>
 
         <main>
             <div class="upload-section">
-                <form id="upload-form" enctype="multipart/form-data">
+                <form id="upload-form">
                     <div class="file-upload-area" id="drop-zone">
                         <input type="file" id="pdf-file" accept="application/pdf" required hidden>
                         <div class="upload-icon">
@@ -42,7 +40,7 @@
                             </svg>
                         </div>
                         <p class="upload-text">Перетащите PDF файл сюда или <span class="browse-link">выберите файл</span></p>
-                        <p class="upload-hint">Максимальный размер файла: 100 MB</p>
+                        <p class="upload-hint">Файл обрабатывается только в вашем браузере</p>
                     </div>
 
                     <div class="file-info" id="file-info" style="display: none;">
@@ -72,9 +70,9 @@
                                 <div class="option-content">
                                     <div class="option-header">
                                         <span class="option-title">Низкое качество</span>
-                                        <span class="option-badge">72 DPI</span>
+                                        <span class="option-badge">Макс. сжатие</span>
                                     </div>
-                                    <p class="option-description">Максимальное сжатие, подходит для просмотра на экране</p>
+                                    <p class="option-description">Максимальное сжатие изображений (качество 0.3)</p>
                                 </div>
                             </label>
 
@@ -83,9 +81,9 @@
                                 <div class="option-content">
                                     <div class="option-header">
                                         <span class="option-title">Среднее качество</span>
-                                        <span class="option-badge">150 DPI</span>
+                                        <span class="option-badge">Баланс</span>
                                     </div>
-                                    <p class="option-description">Оптимальный баланс размера и качества</p>
+                                    <p class="option-description">Оптимальный баланс (качество 0.6)</p>
                                 </div>
                             </label>
 
@@ -94,9 +92,9 @@
                                 <div class="option-content">
                                     <div class="option-header">
                                         <span class="option-title">Высокое качество</span>
-                                        <span class="option-badge">300 DPI</span>
+                                        <span class="option-badge">Мин. потери</span>
                                     </div>
-                                    <p class="option-description">Подходит для печати, минимальная потеря качества</p>
+                                    <p class="option-description">Минимальная потеря качества (качество 0.85)</p>
                                 </div>
                             </label>
                         </div>
@@ -108,7 +106,7 @@
                             <polyline points="7 10 12 15 17 10"></polyline>
                             <line x1="12" y1="15" x2="12" y2="3"></line>
                         </svg>
-                        <span>Сжать PDF</span>
+                        <span>Сжать PDF (в браузере)</span>
                     </button>
                 </form>
 
@@ -116,7 +114,7 @@
                     <div class="progress-bar">
                         <div class="progress-fill" id="progress-fill"></div>
                     </div>
-                    <p class="progress-text" id="progress-text">Сжатие файла...</p>
+                    <p class="progress-text" id="progress-text">Сжатие файла в браузере...</p>
                 </div>
 
                 <div class="result-section" id="result-section" style="display: none;">
@@ -163,12 +161,15 @@
         </main>
 
         <footer>
-            <p>🔒 Все файлы обрабатываются локально на вашем компьютере</p>
-            <p class="footer-note">Файлы не загружаются на внешние серверы и автоматически удаляются после обработки</p>
+            <p>🔒 Файл обрабатывается только в вашем браузере</p>
+            <p class="footer-note">Никакие данные не отправляются на сервер - всё происходит локально в браузере</p>
         </footer>
     </div>
 
-    <script src="script.js"></script>
+    <!-- PDF.js library для работы с PDF в браузере -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="script-client-side.js"></script>
 </body>
 </html>
 
